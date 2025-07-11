@@ -21,15 +21,29 @@ use smithay::{
     wayland::seat::XkbConfig,
 };
 
-struct CompositorState {
-    seat: Seat<Kind>,
-    seat_state: SeatState<Kind>,
-    pointer: PointerHandle<Kind>,
-    keyboard: KeyboardHandle<Kind>,
-    space: Space<Kind>,
-    output: Output,
-    pointer_position: (f64, f64),
+pub struct CompositorState {
+    pub seat: Seat<Kind>,
+    pub seat_state: SeatState<Kind>,
+    pub pointer: PointerHandle<Kind>,
+    pub keyboard: KeyboardHandle<Kind>,
+    pub space: Space<Kind>,
+    pub output: Output,
+    pub pointer_position: (f64, f64),
+    pub lock_duration_minutes: u32,
+    pub typing_input: String,
+    pub input_activbe: bool,
 }
+ fn draw_lock_duration_input(state: &mut CompositorState) {
+    let rect = Rectangle::from_loc_and_size((20,20), (220,40));
+    let bg_color = if state.input_active {
+        [0.3, 0.3, 0.8, 0.6] // active
+    } else {
+        [0.2, 0.2, 0.2, 0.5] // inactive
+    };
+
+    let input_box = LayerSurface:;new-rectanle(rect, bg_color);
+    state.space.add_overlay(&state.output, input_box);
+ }
 
 impl PointerTarget<Kind> for CompositorState {
     fn motion(&mut self, _: &Seat<Kind>, event: &MotionEvent<Kind>) {
@@ -37,14 +51,71 @@ impl PointerTarget<Kind> for CompositorState {
         println!("🖱 Pointer moved to: {:?}", self.pointer_position);
     }
 
-    fn button(&mut self, _: &Seat<Kind>, event: &smithay::input::pointer::ButtonEvent<Kind>) {
-        println!("🔘 Mouse button pressed: {:?}", event.button);
+    impl KeyboardTarget<Kind> for CompositorState {
+    fn key(&mut self, _: &Seat<Kind>, event: &KeyEvent) {
+        if !self.input_active {
+            return;
+        }
+
+        use smithay::input::keyboard::Keysym;
+
+        match event.keysym {
+            Keysym::BackSpace => {
+                self.typing_input.pop();
+            }
+            Keysym::Return => {
+                if let Ok(val) = self.typing_input.parse::<u32>() {
+                    self.lock_duration_minutes = val;
+                    println!("🔒 Set lock duration: {} minutes", val);
+                }
+                self.typing_input.clear();
+                self.input_active = false;
+            }
+            Keysym::Escape => {
+                self.typing_input.clear();
+                self.input_active = false;
+            }
+            _ => {
+                if let Some(ch) = event.text.clone() {
+                    self.typing_input.push_str(&ch);
+                }
+            }
+        }
     }
+}
+
 }
 
 impl KeyboardTarget<Kind> for CompositorState {
     fn key(&mut self, _: &Seat<Kind>, event: &KeyEvent) {
-        println!("⌨️ Key pressed: {:?}", event.key_code);
+        if !self.input_active {
+            return;
+        }
+
+        use smithay::input::keyboard::Keysym;
+
+        match event.keysym {
+            Keysym::BackSpace => {
+                self.typing_input.pop();
+            }
+            Keysym::Return => {
+                if let Ok(val) = self.typing_input.parse::<u32>() {
+                    self.lock_duration_minutes = val;
+                    println!("🔒 Set lock duration: {} minutes", val);
+                }
+                self.typing_input.clear();
+                self.input_active = false;
+            }
+            Keysym::Escape => {
+                self.typing_input.clear();
+                self.input_active = false;
+            }
+            _ => {
+                if let Some(ch) = event.text.clone() {
+                    self.typing_input.push_str(&ch);
+                }
+            }
+        }
     }
 }
 
@@ -102,6 +173,7 @@ fn main() -> anyhow::Result<()> {
         let elements = render_elements_list::<_, Kind>(&state.space, &state.output);
         damage_renderer.render(&surface, [0.1, 0.1, 0.1, 1.0], &elements, &state.output, 1.0)?;
 
+        draw_lock_duration_input(state)
         display.flush_clients()?;
     }
 }
